@@ -26,43 +26,60 @@
 
 ```text
 app/
-  main.py
-  config.py
-  orchestrator.py
-  integrations/
+  main.py               # Точка входа с поддержкой CLI
+  config.py             # Настройки (Pydantic Settings)
+  orchestrator.py       # Оркестрация процессов
+  data_models/          # Pydantic модели данных
+    request.py
+  integrations/         # Клиенты внешних систем
     ati_client.py
     max_client.py
     gmail_client.py
     sheets_client.py
-  services/
+  services/             # Бизнес-логика
     request_parser.py
     draft_builder.py
-    audit_log.py
-  models/
-    request.py
+    audit_writer.py
 
-docs/
+docs/                   # Техническая документация
   ATI_AGENT_ARCHITECTURE.md
   ATI_AGENT_MVP_PLAN.md
   ATI_API_FEASIBILITY_REPORT.md
   MAX_INTEGRATION_FEASIBILITY.md
 
 examples/
-  sample_max_request.txt
+  sample_max_request.txt # Пример входящей заявки
 
 tests/
-  test_request_parser.py
+  test_request_parser.py # Тесты парсера
 ```
 
-## Локальный тест
+## Локальный запуск
+
+Для запуска MVP в безопасном режиме выполните следующие команды:
 
 ```bash
+# Создание и активация окружения
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Установка зависимостей
 pip install -r requirements.txt
-python -m app.main --input examples/sample_max_request.txt
+
+# Запуск тестов
+export PYTHONPATH=$PYTHONPATH:.
+pytest
+
+# Запуск dry-run сценария
+python3 -m app.main --input examples/sample_max_request.txt
 ```
+
+## Результаты работы
+
+После запуска агент:
+1. Выведет в консоль JSON с результатами парсинга и черновиком ATI.
+2. Создаст (или обновит) файл `events.jsonl` — локальный журнал событий (audit log).
 
 ## Переменные окружения
 
-См. `.env.example`. Реальные ключи и токены в репозиторий не добавлять.
+См. `.env.example`. Реальные ключи и токены в репозиторий не добавлять. По умолчанию `DRY_RUN=True`.
