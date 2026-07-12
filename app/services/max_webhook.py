@@ -198,12 +198,19 @@ def extract_max_callback(body: dict[str, Any]) -> dict[str, str]:
         or ""
     )
 
+    message_text = (
+        message_body.get("text")
+        or message.get("text")
+        or ""
+    )
+
     return {
         "callback_id": str(callback_id),
         "payload": str(payload),
         "user_id": str(user_id),
         "chat_id": str(chat_id),
         "message_id": str(message_id),
+        "message_text": str(message_text or ""),
     }
 
 

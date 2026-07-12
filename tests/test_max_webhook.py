@@ -60,6 +60,7 @@ def test_extract_official_callback():
             },
             "body": {
                 "mid": "mid-2",
+                "text": "Тестовая карточка",
             },
         },
     }
@@ -75,6 +76,9 @@ def test_extract_official_callback():
     assert callback["user_id"] == "777"
     assert callback["chat_id"] == "-12345"
     assert callback["message_id"] == "mid-2"
+    assert callback["message_text"] == (
+        "Тестовая карточка"
+    )
 
     assert parse_ati_callback(
         callback["payload"]

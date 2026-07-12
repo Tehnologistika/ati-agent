@@ -60,10 +60,36 @@ def _webhook_secret_is_valid(
     )
 
 
+def _callback_status_message(
+    original_text: str,
+    status_text: str,
+) -> dict[str, Any]:
+    """Replace callback buttons with a visible processing status."""
+
+    base = str(original_text or "").strip()
+
+    if not base:
+        base = "Результат обработки черновика ATI-Agent"
+
+    suffix = (
+        "\n\n---\n"
+        f"**Статус:** {status_text.strip()}"
+    )
+
+    available = max(0, 4000 - len(suffix))
+
+    return {
+        "text": base[:available] + suffix,
+        "format": "markdown",
+    }
+
+
 def _safe_callback_answer(
     client: MaxClient,
     callback_id: str,
     notification: str,
+    *,
+    message: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not callback_id:
         return {
@@ -72,10 +98,37 @@ def _safe_callback_answer(
         }
 
     try:
-        return client.answer_callback(
+        result = client.answer_callback(
             callback_id,
             notification=notification[:1000],
+            message=message,
         )
+
+        response = result.get("response")
+        api_success = (
+            response.get("success")
+            if isinstance(response, dict)
+            else None
+        )
+
+        if (
+            result.get("status") != "ok"
+            or api_success is False
+        ):
+            logger.warning(
+                "MAX callback answer was not successful: %s",
+                result,
+            )
+        else:
+            logger.info(
+                "MAX callback answer completed: "
+                "status=%s api_success=%s",
+                result.get("status"),
+                api_success,
+            )
+
+        return result
+
     except Exception as exc:
         logger.exception(
             "MAX callback answer failed"
@@ -203,10 +256,16 @@ def _handle_ati_callback(
             "callback_answer": answer.get("status"),
         }
 
+    updated_message = _callback_status_message(
+        callback.get("message_text", ""),
+        notification,
+    )
+
     answer = _safe_callback_answer(
         client,
         callback["callback_id"],
         notification,
+        message=updated_message,
     )
 
     return {

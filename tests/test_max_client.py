@@ -185,3 +185,36 @@ def test_missing_ca_bundle_is_rejected(tmp_path):
         match="MAX CA bundle not found",
     ):
         client.get_me()
+
+
+def test_answer_callback_updates_message_and_notification():
+    session = FakeSession(
+        [FakeResponse({"success": True})]
+    )
+    client = MaxClient(_settings(), session=session)
+
+    result = client.answer_callback(
+        "callback-visible-status",
+        notification="Черновик отклонён.",
+        message={
+            "text": "Карточка\n\nСтатус: отклонено",
+            "format": "markdown",
+        },
+    )
+
+    assert result["status"] == "ok"
+
+    call = session.calls[0]
+
+    assert call["params"] == {
+        "callback_id": "callback-visible-status",
+    }
+    assert call["json"]["notification"] == (
+        "Черновик отклонён."
+    )
+    assert call["json"]["message"]["format"] == (
+        "markdown"
+    )
+    assert "Статус: отклонено" in (
+        call["json"]["message"]["text"]
+    )
