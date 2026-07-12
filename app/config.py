@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # MAX: legacy and current environment names
     max_enabled: bool = False
     max_api_base: str = "https://platform-api2.max.ru"
+    max_ca_bundle: str | None = None
     max_token: str | None = None
     max_bot_token: str | None = None
     max_webhook_secret: str | None = None

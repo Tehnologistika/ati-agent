@@ -141,3 +141,47 @@ def test_answer_callback_uses_answers_endpoint():
     assert call["url"] == "https://platform-api2.max.ru/answers"
     assert call["params"] == {"callback_id": "callback-1"}
     assert call["json"]["notification"] == "Подтверждено"
+
+
+def test_configured_ca_bundle_is_used(tmp_path):
+    bundle = tmp_path / "max-ca.pem"
+    bundle.write_text("test certificate bundle", encoding="utf-8")
+
+    settings = Settings(
+        _env_file=None,
+        max_token="test-token",
+        max_api_base="https://platform-api2.max.ru",
+        max_ca_bundle=str(bundle),
+    )
+
+    session = FakeSession(
+        [FakeResponse({"user_id": 123})]
+    )
+
+    client = MaxClient(settings, session=session)
+    result = client.get_me()
+
+    assert result["status"] == "ok"
+    assert session.calls[0]["verify"] == str(bundle)
+
+
+def test_missing_ca_bundle_is_rejected(tmp_path):
+    missing = tmp_path / "missing-ca.pem"
+
+    settings = Settings(
+        _env_file=None,
+        max_token="test-token",
+        max_api_base="https://platform-api2.max.ru",
+        max_ca_bundle=str(missing),
+    )
+
+    client = MaxClient(
+        settings,
+        session=FakeSession([]),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="MAX CA bundle not found",
+    ):
+        client.get_me()

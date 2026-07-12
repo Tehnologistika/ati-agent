@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -27,6 +28,25 @@ class MaxClient:
             f"{path.lstrip('/')}"
         )
 
+    def _verify(self) -> bool | str:
+        """Return the configured application-specific CA bundle."""
+
+        bundle = str(
+            self.settings.max_ca_bundle or ""
+        ).strip()
+
+        if not bundle:
+            return True
+
+        path = Path(bundle)
+
+        if not path.is_file():
+            raise RuntimeError(
+                f"MAX CA bundle not found: {bundle}"
+            )
+
+        return str(path)
+
     def _headers(self) -> dict[str, str]:
         token = self._token()
         if not token:
@@ -50,6 +70,7 @@ class MaxClient:
                 self._url(path),
                 headers=self._headers(),
                 timeout=20,
+                verify=self._verify(),
                 **kwargs,
             )
         except requests.RequestException as exc:
