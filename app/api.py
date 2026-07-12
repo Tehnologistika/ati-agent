@@ -11,12 +11,22 @@ from app.negotiation_orchestrator import (
     NegotiationOrchestrator,
 )
 from app.orchestrator import Orchestrator
+from app.publication_orchestrator import (
+    PublicationOrchestrator,
+)
 from app.services.max_webhook import (
     extract_max_callback,
     extract_max_message,
     extract_update_type,
     is_my_id_command,
     parse_ati_callback,
+)
+from app.services.publication_max import (
+    build_missing_fields_message,
+    build_publication_card,
+    is_publication_request,
+    parse_publication_callback,
+    publication_buttons,
 )
 
 settings = get_settings()
@@ -279,6 +289,179 @@ def _handle_ati_callback(
     }
 
 
+def _handle_publication_callback(
+    callback: dict[str, str],
+) -> dict[str, Any]:
+    """Approve or reject one ATI publication draft."""
+
+    parsed = parse_publication_callback(
+        callback["payload"]
+    )
+
+    client = MaxClient(settings)
+
+    if parsed is None:
+        answer = _safe_callback_answer(
+            client,
+            callback["callback_id"],
+            "Неизвестная команда публикации.",
+        )
+
+        return {
+            "ok": True,
+            "handled": False,
+            "reason": (
+                "unsupported_publication_callback"
+            ),
+            "callback_answer": answer.get(
+                "status"
+            ),
+        }
+
+    action, approval_id = parsed
+    actor_id = callback["user_id"]
+
+    try:
+        orchestrator = PublicationOrchestrator(
+            settings
+        )
+
+        if action == "approve":
+            result = (
+                orchestrator.approve_and_publish(
+                    approval_id,
+                    actor_id,
+                )
+            )
+
+            publication_status = (
+                result.get(
+                    "publication_result",
+                    {},
+                ).get("status")
+            )
+
+            if publication_status == "dry_run":
+                notification = (
+                    "Публикация подтверждена. "
+                    "ATI работает в безопасном "
+                    "режиме DRY_RUN."
+                )
+            elif publication_status in {
+                "published",
+                "sent",
+            }:
+                notification = (
+                    "Заявка опубликована в ATI."
+                )
+            else:
+                notification = (
+                    "Подтверждение обработано. "
+                    "Статус публикации: "
+                    f"{publication_status}"
+                )
+
+        else:
+            result = orchestrator.reject(
+                approval_id,
+                actor_id,
+            )
+            publication_status = "rejected"
+            notification = (
+                "Публикация отклонена."
+            )
+
+    except PermissionError:
+        logger.warning(
+            "MAX publication approval denied "
+            "for user_id=%s",
+            actor_id,
+        )
+
+        answer = _safe_callback_answer(
+            client,
+            callback["callback_id"],
+            "Недостаточно прав.",
+        )
+
+        return {
+            "ok": True,
+            "handled": True,
+            "authorized": False,
+            "action": action,
+            "callback_answer": answer.get(
+                "status"
+            ),
+        }
+
+    except RuntimeError as exc:
+        answer = _safe_callback_answer(
+            client,
+            callback["callback_id"],
+            str(exc),
+        )
+
+        return {
+            "ok": True,
+            "handled": True,
+            "authorized": False,
+            "action": action,
+            "error": str(exc),
+            "callback_answer": answer.get(
+                "status"
+            ),
+        }
+
+    except (KeyError, ValueError) as exc:
+        logger.warning(
+            "MAX publication callback rejected: %s",
+            exc,
+        )
+
+        answer = _safe_callback_answer(
+            client,
+            callback["callback_id"],
+            (
+                "Эта публикация уже обработана "
+                "или не найдена."
+            ),
+        )
+
+        return {
+            "ok": True,
+            "handled": True,
+            "action": action,
+            "error": str(exc),
+            "callback_answer": answer.get(
+                "status"
+            ),
+        }
+
+    updated_message = _callback_status_message(
+        callback.get("message_text", ""),
+        notification,
+    )
+
+    answer = _safe_callback_answer(
+        client,
+        callback["callback_id"],
+        notification,
+        message=updated_message,
+    )
+
+    return {
+        "ok": True,
+        "handled": True,
+        "authorized": True,
+        "action": action,
+        "approval_id": approval_id,
+        "result_status": publication_status,
+        "callback_answer": answer.get(
+            "status"
+        ),
+    }
+
+
 @app.get("/")
 def root() -> dict:
     return {
@@ -337,6 +520,13 @@ async def max_webhook(
             callback["user_id"],
             callback["payload"],
         )
+
+        if parse_publication_callback(
+            callback["payload"]
+        ) is not None:
+            return _handle_publication_callback(
+                callback
+            )
 
         return _handle_ati_callback(callback)
 
@@ -419,6 +609,163 @@ async def max_webhook(
             "skipped": True,
             "reason": "not_leads_chat",
             "chat_id": msg["chat_id"],
+        }
+
+    if is_publication_request(text):
+        publication = PublicationOrchestrator(
+            settings
+        )
+
+        source = (
+            f"max:{msg['chat_id']}:"
+            f"{msg['message_id'] or 'no_message_id'}"
+        )
+
+        result = publication.prepare_from_text(
+            text,
+            source=source,
+            source_chat_id=msg["chat_id"],
+            source_message_id=(
+                msg["message_id"] or None
+            ),
+            requested_by=(
+                msg["user_id"] or None
+            ),
+        )
+
+        approval = result.get("approval")
+        client = MaxClient(settings)
+
+        if approval is None:
+            response_text = (
+                build_missing_fields_message(
+                    result.get(
+                        "request",
+                        {},
+                    ).get(
+                        "missing_fields",
+                        [],
+                    ),
+                    author_name=msg[
+                        "author_name"
+                    ],
+                )
+            )
+
+            if msg["chat_id"]:
+                send_result = (
+                    client.send_message(
+                        response_text,
+                        chat_id=msg[
+                            "chat_id"
+                        ],
+                    )
+                )
+            elif msg["user_id"]:
+                send_result = (
+                    client.send_message(
+                        response_text,
+                        user_id=msg[
+                            "user_id"
+                        ],
+                    )
+                )
+            else:
+                send_result = {
+                    "status": "skipped",
+                    "reason": (
+                        "missing_response_target"
+                    ),
+                }
+
+            logger.info(
+                "MAX publication request "
+                "incomplete: chat_id=%s "
+                "message_id=%s missing=%s",
+                msg["chat_id"],
+                msg["message_id"],
+                result.get(
+                    "request",
+                    {},
+                ).get(
+                    "missing_fields",
+                    [],
+                ),
+            )
+
+            return {
+                "ok": True,
+                "publication_request": True,
+                "valid": False,
+                "missing_fields": result.get(
+                    "request",
+                    {},
+                ).get(
+                    "missing_fields",
+                    [],
+                ),
+                "response_status": (
+                    send_result.get("status")
+                ),
+            }
+
+        owner_id = str(
+            settings.max_owner_user_id or ""
+        ).strip()
+
+        if not owner_id:
+            logger.error(
+                "MAX_OWNER_USER_ID is not "
+                "configured for publication "
+                "approval delivery"
+            )
+
+            return {
+                "ok": True,
+                "publication_request": True,
+                "valid": True,
+                "approval_created": True,
+                "owner_delivery": (
+                    "configuration_required"
+                ),
+            }
+
+        approval_id = str(
+            approval["id"]
+        )
+
+        card_text = build_publication_card(
+            result["request"],
+            result["draft"],
+            approval_id,
+        )
+
+        send_result = client.send_message(
+            card_text,
+            user_id=owner_id,
+            buttons=publication_buttons(
+                approval_id
+            ),
+        )
+
+        logger.info(
+            "MAX publication approval prepared: "
+            "chat_id=%s message_id=%s "
+            "approval_id=%s owner_status=%s",
+            msg["chat_id"],
+            msg["message_id"],
+            approval_id,
+            send_result.get("status"),
+        )
+
+        return {
+            "ok": True,
+            "publication_request": True,
+            "valid": True,
+            "approval_id": approval_id,
+            "owner_delivery": (
+                send_result.get("status")
+            ),
         }
 
     orchestrator = Orchestrator(settings)
