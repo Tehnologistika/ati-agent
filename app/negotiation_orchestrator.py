@@ -114,7 +114,26 @@ class NegotiationOrchestrator:
         write_event("carrier_reply_processed", result)
         return result
 
+    def _authorize_owner(self, approved_by: str) -> None:
+        """Allow MAX approvals only from the configured owner account."""
+
+        if not self.settings.max_enabled:
+            return
+        if not self.settings.max_owner_user_id:
+            raise RuntimeError("MAX_OWNER_USER_ID must be configured before approvals are enabled")
+        if str(approved_by) != str(self.settings.max_owner_user_id):
+            raise PermissionError("Only the configured MAX owner may approve ATI messages")
+
+    @staticmethod
+    def _partner_contact_id(ati_carrier_id: str) -> str:
+        """ATI Messenger expects partner alias in the form ATI_CODE.CONTACT_ID."""
+
+        value = ati_carrier_id.strip()
+        return value if "." in value else f"{value}.0"
+
     def approve_and_send(self, approval_id: str, approved_by: str) -> dict:
+        self._authorize_owner(approved_by)
+
         approval = self.repository.approve(approval_id, approved_by)
         session = self.repository.get_session(approval.negotiation_id)
         message = next((item for item in session.messages if item.id == approval.message_id), None)
@@ -126,8 +145,30 @@ class NegotiationOrchestrator:
         message.approved_by = approved_by
 
         conversation_id = session.carrier.ati_conversation_id
+        dialog_creation = None
         if not conversation_id:
-            delivery = {"status": "blocked", "message": "ATI conversation ID is missing"}
+            partner_id = self._partner_contact_id(session.carrier.ati_carrier_id)
+            dialog_creation = self.messenger.create_dialog(
+                partner_id,
+                partner_name=session.carrier.name,
+                description=f"ТехноЛогистика: {session.route.origin} — {session.route.destination}",
+                approval_consumed=True,
+            )
+            dialog_status = dialog_creation.get("status")
+            if dialog_status == "created":
+                response = dialog_creation.get("response") or {}
+                conversation_id = response.get("id")
+                session.carrier.ati_conversation_id = conversation_id
+            elif dialog_status == "dry_run":
+                conversation_id = f"dry-run:{partner_id}"
+            else:
+                conversation_id = None
+
+        if not conversation_id:
+            delivery = {
+                "status": (dialog_creation or {}).get("status", "blocked"),
+                "message": (dialog_creation or {}).get("message", "ATI dialog could not be created"),
+            }
         else:
             delivery = self.messenger.send_message(
                 conversation_id,
@@ -150,6 +191,10 @@ class NegotiationOrchestrator:
             session.status = NegotiationStatus.ERROR
 
         self.repository.save_session(session)
-        result = {"session": session.model_dump(), "delivery": delivery}
+        result = {
+            "session": session.model_dump(),
+            "dialog_creation": dialog_creation,
+            "delivery": delivery,
+        }
         write_event("approved_message_delivery_attempted", result)
         return result
