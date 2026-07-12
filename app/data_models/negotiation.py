@@ -52,6 +52,7 @@ class MessageDeliveryStatus(str, Enum):
     SENT = "sent"
     DRY_RUN = "dry_run"
     BLOCKED = "blocked"
+    REJECTED = "rejected"
     FAILED = "failed"
 
 

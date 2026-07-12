@@ -131,6 +131,60 @@ class NegotiationOrchestrator:
         value = ati_carrier_id.strip()
         return value if "." in value else f"{value}.0"
 
+    def reject_approval(
+        self,
+        approval_id: str,
+        rejected_by: str,
+    ) -> dict:
+        """Reject one pending outbound ATI draft."""
+
+        self._authorize_owner(rejected_by)
+
+        approval = self.repository.reject(
+            approval_id,
+            rejected_by,
+        )
+
+        session = self.repository.get_session(
+            approval.negotiation_id
+        )
+
+        message = next(
+            (
+                item
+                for item in session.messages
+                if item.id == approval.message_id
+            ),
+            None,
+        )
+
+        if message is None:
+            raise KeyError(
+                f"Message not found for approval: "
+                f"{approval.message_id}"
+            )
+
+        message.delivery_status = (
+            MessageDeliveryStatus.REJECTED
+        )
+        message.approved_by = rejected_by
+        session.status = NegotiationStatus.DRAFT
+
+        self.repository.save_session(session)
+
+        result = {
+            "session": session.model_dump(),
+            "approval": approval.model_dump(),
+        }
+
+        write_event(
+            "negotiation_message_rejected",
+            result,
+            path=self.settings.events_log_path,
+        )
+
+        return result
+
     def approve_and_send(self, approval_id: str, approved_by: str) -> dict:
         self._authorize_owner(approved_by)
 

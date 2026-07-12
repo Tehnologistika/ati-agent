@@ -63,3 +63,32 @@ def test_missing_owner_id_blocks_approvals_when_max_is_enabled():
 
     with pytest.raises(RuntimeError):
         orchestrator.approve_and_send(prepared["approval"]["id"], "777")
+
+
+def test_owner_can_reject_pending_message():
+    orchestrator = _orchestrator(
+        owner_id="777"
+    )
+    prepared = _prepared(orchestrator)
+
+    approval_id = prepared["approval"]["id"]
+
+    result = orchestrator.reject_approval(
+        approval_id,
+        "777",
+    )
+
+    assert (
+        result["approval"]["status"]
+        == "rejected"
+    )
+    assert (
+        result["session"]["status"]
+        == "draft"
+    )
+
+    with pytest.raises(ValueError):
+        orchestrator.approve_and_send(
+            approval_id,
+            "777",
+        )

@@ -119,6 +119,33 @@ class NegotiationRepository:
         self.connection.commit()
         return self.get_approval(approval_id)
 
+    def reject(self, approval_id: str, rejected_by: str) -> ApprovalRequest:
+        approval = self.get_approval(approval_id)
+
+        if approval.status != ApprovalStatus.PENDING:
+            raise ValueError(
+                f"Approval is not pending: {approval.status.value}"
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        self.connection.execute(
+            """
+            UPDATE approvals
+            SET status = ?, approved_at = ?, approved_by = ?
+            WHERE id = ?
+            """,
+            (
+                ApprovalStatus.REJECTED.value,
+                now,
+                rejected_by,
+                approval_id,
+            ),
+        )
+        self.connection.commit()
+
+        return self.get_approval(approval_id)
+
     def consume(self, approval_id: str, message_id: str) -> ApprovalRequest:
         approval = self.get_approval(approval_id)
         if approval.message_id != message_id:
