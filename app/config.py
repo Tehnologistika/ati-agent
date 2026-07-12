@@ -25,10 +25,12 @@ class Settings(BaseSettings):
     ati_messenger_history_path: str = "/messenger/1.1/chats/{chat_id}/history/"
     ati_messenger_inbox_path: str = "/messenger/1.1/inbox/"
 
-    # Paid ATI search services. Demo mode can be used to validate the contract.
+    # ATI geo dictionary and paid search services.
+    ati_geo_autocomplete_path: str = "/gw/gis-dict/v1/autocomplete/suggestions"
     ati_trucks_search_path: str = "/v1.0/trucks/search/by-filter"
     ati_active_carriers_search_path: str = "/v2/dstats/active_firms/search"
     ati_search_demo_mode: bool = True
+    ati_default_country_id: int = 1
 
     anthropic_enabled: bool = False
     anthropic_api_key: str | None = None
