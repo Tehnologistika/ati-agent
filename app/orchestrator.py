@@ -32,5 +32,5 @@ class Orchestrator:
             "publication_result": publication_result,
         }
 
-        write_event("request_processed", result)
+        write_event("request_processed", result, path=self.settings.events_log_path)
         return result

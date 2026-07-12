@@ -12,5 +12,9 @@ def write_event(event_type: str, details: dict[str, Any], path: str = "events.js
         "event_type": event_type,
         "details": details,
     }
-    with Path(path).open("a", encoding="utf-8") as file:
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    with target.open("a", encoding="utf-8") as file:
         file.write(json.dumps(event, ensure_ascii=False) + "\n")
