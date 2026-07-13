@@ -442,6 +442,8 @@ class RequestRegistryRepository:
         actor_id: str,
         owner_user_id: str,
         reason: str | None = None,
+        actor_name: str | None = None,
+        close_message_id: str | None = None,
     ) -> tuple[RegistryRequest, bool]:
         """
         Закрыть заявку вправе только:
@@ -462,6 +464,14 @@ class RequestRegistryRepository:
         owner = str(
             owner_user_id or ""
         ).strip()
+
+        actor_display_name = _clean_optional(
+            actor_name
+        )
+
+        closing_message_id = _clean_optional(
+            close_message_id
+        )
 
         if not actor:
             raise PermissionError(
@@ -533,6 +543,12 @@ class RequestRegistryRepository:
 
             entry.closed_at = now
             entry.closed_by = actor
+            entry.closed_by_name = (
+                actor_display_name
+            )
+            entry.close_message_id = (
+                closing_message_id
+            )
             entry.close_reason = (
                 _clean_optional(reason)
             )
@@ -570,6 +586,12 @@ class RequestRegistryRepository:
                     "reason": entry.close_reason,
                     "closed_by_owner": is_owner,
                     "closed_by_author": is_author,
+                    "closed_by_name": (
+                        entry.closed_by_name
+                    ),
+                    "close_message_id": (
+                        entry.close_message_id
+                    ),
                     "ati_status": entry.ati_status,
                     "ayub_status": entry.ayub_status,
                 },

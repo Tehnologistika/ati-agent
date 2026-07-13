@@ -319,6 +319,90 @@ class PublicationApprovalRepository:
         self.save(approval)
         return approval
 
+    def cancel_pending_by_registry_request(
+        self,
+        registry_request_id: str,
+        *,
+        cancelled_by: str,
+        reason: str | None = None,
+    ) -> list[str]:
+        """
+        Отменить все ожидающие ATI approvals,
+        связанные с закрытой заявкой.
+        """
+
+        normalized_id = str(
+            registry_request_id or ""
+        ).strip().upper()
+
+        rows = self.connection.execute(
+            """
+            SELECT payload
+            FROM publication_approvals
+            WHERE status = ?
+            """,
+            (
+                PublicationApprovalStatus
+                .PENDING.value,
+            ),
+        ).fetchall()
+
+        cancelled_ids: list[str] = []
+
+        from app.data_models.publication import (
+            utcnow,
+        )
+
+        processed_at = utcnow()
+
+        for row in rows:
+            approval = (
+                PublicationApproval
+                .model_validate_json(
+                    row["payload"]
+                )
+            )
+
+            approval_request_id = str(
+                approval.registry_request_id
+                or ""
+            ).strip().upper()
+
+            if (
+                approval_request_id
+                != normalized_id
+            ):
+                continue
+
+            approval.status = (
+                PublicationApprovalStatus
+                .CANCELLED
+            )
+
+            approval.processed_at = processed_at
+            approval.processed_by = str(
+                cancelled_by
+            )
+
+            approval.publication_result = {
+                "status": "cancelled",
+                "registry_request_id": (
+                    normalized_id
+                ),
+                "reason": (
+                    str(reason).strip()
+                    if reason
+                    else "request_closed"
+                ),
+            }
+
+            self.save(approval)
+            cancelled_ids.append(
+                approval.id
+            )
+
+        return cancelled_ids
+
     def consume(
         self,
         approval_id: str,

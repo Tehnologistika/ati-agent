@@ -67,6 +67,8 @@ class RegistryRequest(BaseModel):
 
     closed_at: datetime | None = None
     closed_by: str | None = None
+    closed_by_name: str | None = None
+    close_message_id: str | None = None
     close_reason: str | None = None
 
     version: int = Field(

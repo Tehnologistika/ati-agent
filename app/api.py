@@ -28,6 +28,10 @@ from app.services.publication_max import (
     parse_publication_callback,
     publication_buttons,
 )
+from app.services.request_close import (
+    is_close_command,
+    process_max_close,
+)
 
 settings = get_settings()
 
@@ -585,6 +589,173 @@ async def max_webhook(
             ),
         }
 
+    if is_close_command(text):
+        client = MaxClient(settings)
+
+        try:
+            close_result = process_max_close(
+                database_url=(
+                    settings.database_url
+                ),
+                owner_user_id=str(
+                    settings.max_owner_user_id
+                    or ""
+                ),
+                text=text,
+                message=msg,
+            )
+
+            registry_entry = close_result[
+                "registry_request"
+            ]
+
+            request_id = str(
+                registry_entry["request_id"]
+            )
+
+            closed_now = bool(
+                close_result["closed_now"]
+            )
+
+            cancelled_count = len(
+                close_result[
+                    "cancelled_approval_ids"
+                ]
+            )
+
+            ati_action = str(
+                close_result["ati_action"]
+            )
+
+            if (
+                ati_action
+                == "close_publication_required"
+            ):
+                ati_text = (
+                    "объявление отмечено для "
+                    "снятия с публикации"
+                )
+
+            elif cancelled_count:
+                ati_text = (
+                    "ожидающий черновик отменён"
+                )
+
+            else:
+                ati_text = (
+                    "активная публикация "
+                    "отсутствует"
+                )
+
+            if closed_now:
+                response_text = (
+                    f"**Заявка `{request_id}` "
+                    "закрыта.**\n\n"
+                    "Статус: больше не актуальна.\n"
+                    f"Закрыл: "
+                    f"{msg['author_name']}.\n"
+                    f"ATI: {ati_text}.\n"
+                    "Для Айюба: заявка "
+                    "помечена неактивной."
+                )
+
+                reason = registry_entry.get(
+                    "close_reason"
+                )
+
+                if reason:
+                    response_text += (
+                        "\nПричина: "
+                        + str(reason)
+                        + "."
+                    )
+
+            else:
+                response_text = (
+                    f"Заявка `{request_id}` "
+                    "уже закрыта.\n\n"
+                    "Повторное закрытие "
+                    "не требуется."
+                )
+
+            close_status = (
+                "closed"
+                if closed_now
+                else "already_closed"
+            )
+
+            authorized = True
+
+        except PermissionError as exc:
+            logger.warning(
+                "MAX request close denied: "
+                "user_id=%s error=%s",
+                msg["user_id"],
+                exc,
+            )
+
+            response_text = (
+                "Закрытие отклонено.\n\n"
+                "Закрыть заявку может только "
+                "Навигатор, который её "
+                "опубликовал, либо владелец."
+            )
+
+            close_result = None
+            close_status = "forbidden"
+            authorized = False
+
+        except KeyError as exc:
+            error_text = str(exc).strip("'")
+
+            response_text = (
+                "Не удалось закрыть заявку.\n\n"
+                f"{error_text}."
+            )
+
+            close_result = None
+            close_status = "not_found"
+            authorized = None
+
+        except ValueError as exc:
+            response_text = (
+                "Не удалось закрыть заявку.\n\n"
+                f"{str(exc)}"
+            )
+
+            close_result = None
+            close_status = "invalid_command"
+            authorized = None
+
+        if msg["chat_id"]:
+            send_result = client.send_message(
+                response_text,
+                chat_id=msg["chat_id"],
+            )
+
+        elif msg["user_id"]:
+            send_result = client.send_message(
+                response_text,
+                user_id=msg["user_id"],
+            )
+
+        else:
+            send_result = {
+                "status": "skipped",
+                "reason": "missing_target",
+            }
+
+        return {
+            "ok": True,
+            "close_request": True,
+            "status": close_status,
+            "authorized": authorized,
+            "result": close_result,
+            "response_status": (
+                send_result.get("status")
+            ),
+        }
+
     leads_ids = {
         str(value).strip()
         for value in [
@@ -768,12 +939,32 @@ async def max_webhook(
             or {}
         )
 
+        registry_request = (
+            result.get("registry_request")
+            or {}
+        )
+
+        registry_request_id = str(
+            registry_request.get(
+                "request_id"
+            )
+            or ""
+        ).strip()
+
         card_text = build_publication_card(
             result["request"],
             result["draft"],
             approval_id,
             ati_preview=preview,
         )
+
+        if registry_request_id:
+            card_text = (
+                "**Заявка реестра:** "
+                f"`{registry_request_id}`"
+                "\n\n"
+                + card_text
+            )
 
         send_result = client.send_message(
             card_text,
@@ -804,6 +995,9 @@ async def max_webhook(
             "publication_request": True,
             "valid": True,
             "approval_id": approval_id,
+            "registry_request_id": (
+                registry_request_id
+            ),
             "owner_delivery": (
                 send_result.get("status")
             ),
