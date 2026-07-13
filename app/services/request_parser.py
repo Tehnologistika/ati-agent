@@ -250,6 +250,16 @@ def _is_rate_line(
     if not match:
         return False
 
+    # Подписанная стоимость является ставкой
+    # даже без слов «нал», «НДС», «руб.» или знака ₽.
+    if re.match(
+        r"^\s*(?:ставка|цена|стоимость)"
+        r"\s*[:\-]",
+        line,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
     if PAYMENT_HINT_RE.search(line):
         return True
 
