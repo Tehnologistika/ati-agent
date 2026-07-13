@@ -7,6 +7,9 @@ from app.data_models.publication import (
 from app.integrations.ati_client import AtiClient
 from app.services.audit_writer import write_event
 from app.services.draft_builder import build_ati_draft
+from app.services.publication_preview import (
+    build_publication_preview,
+)
 from app.services.publication_repository import (
     PublicationApprovalRepository,
 )
@@ -72,6 +75,7 @@ class PublicationOrchestrator:
             result = {
                 "request": request.model_dump(),
                 "draft": draft.model_dump(),
+                "ati_preview": None,
                 "approval": None,
             }
 
@@ -101,11 +105,20 @@ class PublicationOrchestrator:
             ),
         )
 
+        preview = build_publication_preview(
+            request,
+            approval.id,
+            self.settings,
+        )
+
         self.repository.create(approval)
 
         result = {
             "request": request.model_dump(),
             "draft": draft.model_dump(),
+            "ati_preview": preview.model_dump(
+                mode="json"
+            ),
             "approval": approval.model_dump(),
         }
 
@@ -149,6 +162,34 @@ class PublicationOrchestrator:
     ) -> dict:
         self._authorize_owner(approved_by)
 
+        pending = self.repository.get(
+            approval_id
+        )
+
+        preview = build_publication_preview(
+            pending.request,
+            pending.id,
+            self.settings,
+        )
+
+        # В DRY_RUN разрешаем проверять полный
+        # цикл кнопки подтверждения.
+        # В реальном режиме незавершённая заявка
+        # никогда не должна попасть в ATI.
+        if (
+            not self.settings.dry_run
+            and not preview.ready_for_api
+        ):
+            missing = ", ".join(
+                preview.missing_fields
+            )
+
+            raise RuntimeError(
+                "Публикация заблокирована: "
+                "не заполнены обязательные поля ATI: "
+                f"{missing}"
+            )
+
         approval = self.repository.approve(
             approval_id,
             approved_by,
@@ -158,6 +199,12 @@ class PublicationOrchestrator:
             approval.draft
         )
 
+        publication_result[
+            "ati_preview"
+        ] = preview.model_dump(
+            mode="json"
+        )
+
         approval = self.repository.consume(
             approval_id,
             publication_result,
@@ -165,7 +212,12 @@ class PublicationOrchestrator:
 
         result = {
             "approval": approval.model_dump(),
-            "publication_result": publication_result,
+            "ati_preview": preview.model_dump(
+                mode="json"
+            ),
+            "publication_result": (
+                publication_result
+            ),
         }
 
         write_event(

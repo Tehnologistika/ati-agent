@@ -734,17 +734,29 @@ async def max_webhook(
             approval["id"]
         )
 
+        preview = (
+            result.get("ati_preview")
+            or {}
+        )
+
         card_text = build_publication_card(
             result["request"],
             result["draft"],
             approval_id,
+            ati_preview=preview,
         )
 
         send_result = client.send_message(
             card_text,
             user_id=owner_id,
             buttons=publication_buttons(
-                approval_id
+                approval_id,
+                ready_for_api=bool(
+                    preview.get(
+                        "ready_for_api"
+                    )
+                ),
+                dry_run=settings.dry_run,
             ),
         )
 
