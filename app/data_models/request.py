@@ -23,6 +23,10 @@ class TransportRequest(BaseModel):
     # Original route text before normalization.
     route_raw: str | None = None
 
+    # Explicit marker: the customer provides enough
+    # vehicles to load one complete car carrier.
+    is_lot: bool = False
+
     vehicle: str | None = None
     ready_date: str | None = None
     vehicle_condition: str | None = None
@@ -51,6 +55,8 @@ class AtiDraft(BaseModel):
     route_points: list[str] = Field(
         default_factory=list
     )
+
+    is_lot: bool = False
 
     cargo_description: str | None = None
     ready_date: str | None = None

@@ -35,6 +35,22 @@ PAYMENT_HINT_RE = re.compile(
 )
 
 
+LOT_RE = re.compile(
+    r"(?<![A-Za-zА-Яа-яЁё0-9_])"
+    r"лот"
+    r"(?![A-Za-zА-Яа-яЁё0-9_])",
+    flags=re.IGNORECASE,
+)
+
+
+LOT_CARGO_DESCRIPTION = (
+    "Лот автомобилей: требуется полный автовоз. "
+    "Заказчик подбирает состав автомобилей под "
+    "полезную площадь, размер и конфигурацию "
+    "конкретного автовоза."
+)
+
+
 # This dictionary is not the full geography database.
 # It only expands frequent operational abbreviations.
 # Full validation will be performed through ATI geo API.
@@ -399,6 +415,22 @@ def _is_metadata_line(
     return False
 
 
+def _is_lot_request(
+    lines: list[str],
+) -> bool:
+    """
+    Detect an explicit standalone word ЛОТ.
+
+    Similar words such as «лоток» or «лотос»
+    must not activate the full-car-carrier mode.
+    """
+
+    return any(
+        LOT_RE.search(line)
+        for line in lines
+    )
+
+
 def _extract_vehicle(
     lines: list[str],
     route_index: int | None,
@@ -544,6 +576,13 @@ def parse_transport_request(
         route_index,
     )
 
+    is_lot = _is_lot_request(lines)
+
+    if is_lot:
+        # For a full-car-carrier lot the exact makes,
+        # models and fixed vehicle count are optional.
+        vehicle = LOT_CARGO_DESCRIPTION
+
     ready_date, _ = _extract_labeled(
         lines,
         [
@@ -586,6 +625,7 @@ def parse_transport_request(
         destination=destination,
         route_points=route_points,
         route_raw=route_raw,
+        is_lot=is_lot,
         vehicle=vehicle,
         ready_date=ready_date,
         vehicle_condition=condition,

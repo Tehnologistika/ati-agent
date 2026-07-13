@@ -34,7 +34,11 @@ def build_ati_draft(
     )
 
     title_parts = [
-        "Перевозка авто",
+        (
+            "Лот автомобилей (полный автовоз)"
+            if request.is_lot
+            else "Перевозка авто"
+        ),
     ]
 
     if route:
@@ -46,6 +50,7 @@ def build_ati_draft(
         title=title,
         route=route,
         route_points=route_points,
+        is_lot=request.is_lot,
         cargo_description=request.vehicle,
         ready_date=request.ready_date,
         requested_rate=request.requested_rate,

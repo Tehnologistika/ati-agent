@@ -140,13 +140,19 @@ def build_publication_card(
         )
     )
 
+    request_type = (
+        "Лот — полный автовоз"
+        if bool(request.get("is_lot"))
+        else "Обычная заявка"
+    )
+
     text = (
         "## ЧЕРНОВИК ПУБЛИКАЦИИ В ATI\n\n"
         f"{safety_text}\n\n"
+        f"**Тип заявки:** {request_type}\n"
         f"**Маршрут:** "
-        f"{value(request, 'origin')} — "
-        f"{value(request, 'destination')}\n"
-        f"**Автомобиль:** "
+        f"{value(draft, 'route')}\n"
+        f"**Автомобили/груз:** "
         f"{value(request, 'vehicle')}\n"
         f"**Дата готовности:** "
         f"{value(request, 'ready_date')}\n"
