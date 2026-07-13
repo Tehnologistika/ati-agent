@@ -105,25 +105,36 @@ class PublicationOrchestrator:
             ),
         )
 
+        stored, created = (
+            self.repository.create_or_get(
+                approval
+            )
+        )
+
         preview = build_publication_preview(
-            request,
-            approval.id,
+            stored.request,
+            stored.id,
             self.settings,
         )
 
-        self.repository.create(approval)
-
         result = {
-            "request": request.model_dump(),
-            "draft": draft.model_dump(),
+            "request": stored.request.model_dump(),
+            "draft": stored.draft.model_dump(),
             "ati_preview": preview.model_dump(
                 mode="json"
             ),
-            "approval": approval.model_dump(),
+            "approval": stored.model_dump(),
+            "duplicate": not created,
         }
 
+        event_name = (
+            "publication_approval_created"
+            if created
+            else "publication_duplicate_skipped"
+        )
+
         write_event(
-            "publication_approval_created",
+            event_name,
             result,
             path=self.settings.events_log_path,
         )

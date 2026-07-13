@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -32,6 +33,37 @@ def _db_path(database_url: str) -> str:
     return str(path)
 
 
+def _source_key(
+    source_chat_id: str,
+    source_message_id: str | None,
+) -> str | None:
+    """
+    Build a stable non-secret key for one source
+    MAX message.
+
+    Messages without an ID are not deduplicated.
+    """
+
+    chat_id = str(
+        source_chat_id or ""
+    ).strip()
+
+    message_id = str(
+        source_message_id or ""
+    ).strip()
+
+    if not chat_id or not message_id:
+        return None
+
+    raw = (
+        chat_id
+        + "\x00"
+        + message_id
+    ).encode("utf-8")
+
+    return hashlib.sha256(raw).hexdigest()
+
+
 class PublicationApprovalRepository:
     """Persistent one-time ATI publication approvals."""
 
@@ -53,16 +85,52 @@ class PublicationApprovalRepository:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 processed_at TEXT,
-                processed_by TEXT
+                processed_by TEXT,
+                source_key TEXT
             );
             """
         )
+
+        columns = {
+            str(row["name"])
+            for row in self.connection.execute(
+                """
+                PRAGMA table_info(
+                    publication_approvals
+                )
+                """
+            ).fetchall()
+        }
+
+        # Безопасная миграция существующей базы.
+        if "source_key" not in columns:
+            self.connection.execute(
+                """
+                ALTER TABLE publication_approvals
+                ADD COLUMN source_key TEXT
+                """
+            )
+
+        self.connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_publication_approvals_source_key
+            ON publication_approvals(source_key)
+            WHERE source_key IS NOT NULL
+            """
+        )
+
         self.connection.commit()
 
     def save(
         self,
         approval: PublicationApproval,
     ) -> None:
+        source_key = _source_key(
+            approval.source_chat_id,
+            approval.source_message_id,
+        )
+
         self.connection.execute(
             """
             INSERT INTO publication_approvals (
@@ -71,14 +139,16 @@ class PublicationApprovalRepository:
                 status,
                 created_at,
                 processed_at,
-                processed_by
+                processed_by,
+                source_key
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 payload = excluded.payload,
                 status = excluded.status,
                 processed_at = excluded.processed_at,
-                processed_by = excluded.processed_by
+                processed_by = excluded.processed_by,
+                source_key = excluded.source_key
             """,
             (
                 approval.id,
@@ -91,6 +161,7 @@ class PublicationApprovalRepository:
                     else None
                 ),
                 approval.processed_by,
+                source_key,
             ),
         )
         self.connection.commit()
@@ -101,6 +172,71 @@ class PublicationApprovalRepository:
     ) -> PublicationApproval:
         self.save(approval)
         return approval
+
+    def find_by_source(
+        self,
+        source_chat_id: str,
+        source_message_id: str | None,
+    ) -> PublicationApproval | None:
+        source_key = _source_key(
+            source_chat_id,
+            source_message_id,
+        )
+
+        if source_key is None:
+            return None
+
+        row = self.connection.execute(
+            """
+            SELECT payload
+            FROM publication_approvals
+            WHERE source_key = ?
+            """,
+            (source_key,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return PublicationApproval.model_validate_json(
+            row["payload"]
+        )
+
+    def create_or_get(
+        self,
+        approval: PublicationApproval,
+    ) -> tuple[PublicationApproval, bool]:
+        """
+        Return (approval, created).
+
+        The same MAX chat/message combination must
+        produce only one stored publication approval.
+        """
+
+        existing = self.find_by_source(
+            approval.source_chat_id,
+            approval.source_message_id,
+        )
+
+        if existing is not None:
+            return existing, False
+
+        try:
+            self.save(approval)
+        except sqlite3.IntegrityError:
+            self.connection.rollback()
+
+            existing = self.find_by_source(
+                approval.source_chat_id,
+                approval.source_message_id,
+            )
+
+            if existing is not None:
+                return existing, False
+
+            raise
+
+        return approval, True
 
     def get(
         self,

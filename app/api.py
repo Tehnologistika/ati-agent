@@ -709,6 +709,35 @@ async def max_webhook(
                 ),
             }
 
+        if result.get("duplicate"):
+            approval_id = str(
+                approval["id"]
+            )
+
+            logger.info(
+                "MAX duplicate publication skipped: "
+                "chat_id=%s message_id=%s "
+                "approval_id=%s status=%s",
+                msg["chat_id"],
+                msg["message_id"],
+                approval_id,
+                approval.get("status"),
+            )
+
+            return {
+                "ok": True,
+                "publication_request": True,
+                "valid": True,
+                "duplicate": True,
+                "approval_id": approval_id,
+                "approval_status": (
+                    approval.get("status")
+                ),
+                "owner_delivery": (
+                    "skipped_duplicate"
+                ),
+            }
+
         owner_id = str(
             settings.max_owner_user_id or ""
         ).strip()
