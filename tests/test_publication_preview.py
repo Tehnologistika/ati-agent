@@ -159,7 +159,13 @@ def test_card_contains_exact_ati_preview(
     assert "Лот — полный автовоз" in card
 
     assert (
-        "Полный автовоз / отдельная машина"
+        "Полный автовоз (FTL)"
+        in card
+    )
+
+    assert (
+        "Количество авто:** "
+        "подбирается под вместимость автовоза"
         in card
     )
 

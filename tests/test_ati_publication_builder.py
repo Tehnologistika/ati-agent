@@ -228,6 +228,7 @@ def test_full_carrier_lot_payload():
 
     assert app["truck"]["load_type"] == "ftl"
     assert app["truck"]["trucks_count"] == 1
+    assert result.estimated_vehicle_count is None
 
     assert app["route"]["loading"][
         "cargos"

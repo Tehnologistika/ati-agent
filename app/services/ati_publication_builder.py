@@ -460,6 +460,15 @@ def build_ati_publication(
         vehicle_count,
     )
 
+    # Для лота количество автомобилей заранее
+    # не фиксируется. Состав подбирается под
+    # вместимость конкретного автовоза.
+    if (
+        profile
+        == PublicationProfile.FULL_CARRIER_LOT
+    ):
+        vehicle_count = None
+
     cargo_name = _cargo_name(
         profile,
         request.vehicle,

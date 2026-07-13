@@ -348,7 +348,7 @@ def build_publication_card(
     load_type = truck.get("load_type")
 
     load_type_label = {
-        "ftl": "Полный автовоз / отдельная машина",
+        "ftl": "Полный автовоз (FTL)",
         "dont-care": (
             "Отдельная машина или догруз"
         ),
@@ -416,9 +416,17 @@ def build_publication_card(
     )
 
     count_text = (
-        str(vehicle_count)
-        if vehicle_count is not None
-        else "не определено"
+        "подбирается под вместимость автовоза"
+        if (
+            str(profile_value or "")
+            == "full_carrier_lot"
+            or bool(request.get("is_lot"))
+        )
+        else (
+            str(vehicle_count)
+            if vehicle_count is not None
+            else "не определено"
+        )
     )
 
     sections = [
