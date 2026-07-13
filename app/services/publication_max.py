@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services.loading_schedule_format import (
+    format_loading_dates_payload,
+)
+
 
 FIELD_LABELS = {
     "origin": "город загрузки",
@@ -401,6 +405,28 @@ def build_publication_card(
         )
     ]
 
+    loading_dates = (
+        application
+        .get("route", {})
+        .get("loading", {})
+        .get("dates", {})
+    )
+
+    if (
+        "loading_date_type"
+        in missing_fields
+    ):
+        loading_text = value(
+            request,
+            "ready_date",
+        )
+    else:
+        loading_text = (
+            format_loading_dates_payload(
+                loading_dates
+            )
+        )
+
     missing_text = "\n".join(
         "• "
         + _missing_field_label(
@@ -443,8 +469,8 @@ def build_publication_card(
         f"**Вес:** {weight_text}",
         f"**Ставка:** {_rate_text(request)}",
         (
-            "**Дата готовности:** "
-            f"{value(request, 'ready_date')}"
+            "**Готовность к отправке:** "
+            f"{loading_text}"
         ),
         (
             "**Состояние:** "

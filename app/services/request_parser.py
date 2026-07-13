@@ -5,6 +5,10 @@ import re
 from app.data_models.request import (
     TransportRequest,
 )
+from app.services.loading_schedule import (
+    is_loading_schedule_text,
+    normalize_loading_input,
+)
 
 
 ROUTE_SPLIT_RE = re.compile(
@@ -441,6 +445,32 @@ def _is_lot_request(
     )
 
 
+def _extract_ready_date(
+    lines: list[str],
+) -> str | None:
+    labeled, _ = _extract_labeled(
+        lines,
+        [
+            "Дата готовности",
+            "Дата",
+            "Готовность",
+        ],
+    )
+
+    if labeled:
+        return normalize_loading_input(
+            labeled
+        )
+
+    for line in lines:
+        if is_loading_schedule_text(line):
+            return normalize_loading_input(
+                line
+            )
+
+    return None
+
+
 def _extract_vehicle(
     lines: list[str],
     route_index: int | None,
@@ -468,6 +498,9 @@ def _extract_vehicle(
             break
 
         if _is_metadata_line(line):
+            continue
+
+        if is_loading_schedule_text(line):
             continue
 
         if _looks_like_route(line):
@@ -593,13 +626,8 @@ def parse_transport_request(
         # models and fixed vehicle count are optional.
         vehicle = LOT_CARGO_DESCRIPTION
 
-    ready_date, _ = _extract_labeled(
-        lines,
-        [
-            "Дата готовности",
-            "Дата",
-            "Готовность",
-        ],
+    ready_date = _extract_ready_date(
+        lines
     )
 
     condition, _ = _extract_labeled(

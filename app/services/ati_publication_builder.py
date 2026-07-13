@@ -10,6 +10,9 @@ from app.data_models.ati_publication import (
     PublicationProfile,
     ResolvedRoutePoint,
 )
+from app.services.loading_schedule_format import (
+    format_loading_schedule_note,
+)
 
 
 PROFILE_LABELS = {
@@ -366,6 +369,15 @@ def _build_note(
         "Ориентировочный общий вес: "
         f"{weight_tons:g} т."
     )
+
+    loading_note = format_loading_schedule_note(
+        data.loading_date_type,
+        data.first_date,
+        data.last_date,
+    )
+
+    if loading_note:
+        lines.append(loading_note)
 
     if request.vehicle_condition:
         lines.append(

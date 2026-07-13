@@ -4,7 +4,6 @@ from app.config import Settings
 from app.data_models.ati_publication import (
     AtiPublicationBuildInput,
     AtiPublicationBuildResult,
-    LoadingDateType,
     ResolvedRoutePoint,
 )
 from app.data_models.request import (
@@ -12,6 +11,9 @@ from app.data_models.request import (
 )
 from app.services.ati_publication_builder import (
     build_ati_publication,
+)
+from app.services.loading_schedule import (
+    parse_loading_schedule,
 )
 
 
@@ -60,42 +62,6 @@ def _route_names(
     return fallback
 
 
-def _loading_date_type(
-    request: TransportRequest,
-) -> LoadingDateType | None:
-    value = str(
-        request.ready_date or ""
-    ).strip().casefold().replace(
-        "ё",
-        "е",
-    )
-
-    if not value:
-        return None
-
-    if (
-        "груза нет" in value
-        or "запрос ставки" in value
-    ):
-        return LoadingDateType.RATE_REQUEST
-
-    if "постоян" in value:
-        return LoadingDateType.PERMANENT
-
-    if (
-        "готов" in value
-        or value in {
-            "сегодня",
-            "сейчас",
-        }
-    ):
-        return LoadingDateType.READY
-
-    # Конкретные даты и диапазоны будут
-    # разбираться отдельным модулем дат.
-    return None
-
-
 def build_publication_preview(
     request: TransportRequest,
     approval_id: str,
@@ -142,6 +108,10 @@ def build_publication_preview(
         f"TL-ATI-{external_suffix}"
     )[:250]
 
+    schedule = parse_loading_schedule(
+        request.ready_date
+    )
+
     build_input = AtiPublicationBuildInput(
         external_id=external_id,
         request=request,
@@ -157,7 +127,12 @@ def build_publication_preview(
         currency_type_id=None,
 
         loading_date_type=(
-            _loading_date_type(request)
+            schedule.date_type
+        ),
+        first_date=schedule.first_date,
+        last_date=schedule.last_date,
+        permanent_periodicity=(
+            schedule.periodicity
         ),
 
         # Пока вес рассчитывается ориентировочно.
