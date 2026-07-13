@@ -32,6 +32,13 @@ from app.services.request_close import (
     is_close_command,
     process_max_close,
 )
+from app.services.registry_status_api import (
+    build_registry_status,
+    registry_api_secret_is_valid,
+)
+from app.services.request_registry import (
+    RequestRegistryRepository,
+)
 
 settings = get_settings()
 
@@ -489,6 +496,63 @@ def root() -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get(
+    "/internal/registry/requests/{request_id}"
+)
+def registry_request_status(
+    request_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """
+    Read-only status endpoint for Ayub.
+
+    Authentication:
+    X-Yarus-Pik-Secret HTTP header.
+    """
+
+    configured_secret = str(
+        settings.registry_api_secret or ""
+    ).strip()
+
+    if not configured_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="registry_api_disabled",
+        )
+
+    provided_secret = request.headers.get(
+        "X-Yarus-Pik-Secret"
+    )
+
+    if not registry_api_secret_is_valid(
+        provided_secret,
+        configured_secret,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="forbidden",
+        )
+
+    registry = RequestRegistryRepository(
+        settings.database_url
+    )
+
+    try:
+        try:
+            entry = registry.get(request_id)
+
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="request_not_found",
+            ) from exc
+
+        return build_registry_status(entry)
+
+    finally:
+        registry.connection.close()
 
 
 @app.post("/webhook/max/{secret}")

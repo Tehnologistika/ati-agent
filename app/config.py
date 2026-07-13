@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # Only this MAX user may approve outgoing ATI messages
     max_owner_user_id: str | None = None
 
+    # Internal read-only Yarus Pik registry API.
+    # The secret is sent only in an HTTP header.
+    registry_api_secret: str | None = None
+
     # Google legacy settings
     gmail_credentials_path: str | None = None
     google_service_account_json: str | None = None
