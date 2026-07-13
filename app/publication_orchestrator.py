@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from app.config import Settings
+from app.data_models.ati_publication import (
+    AtiPublicationBuildResult,
+)
 from app.data_models.publication import (
     PublicationApproval,
 )
@@ -12,6 +15,10 @@ from app.services.publication_preview import (
 )
 from app.services.publication_repository import (
     PublicationApprovalRepository,
+)
+from app.services.publication_snapshot import (
+    freeze_snapshot,
+    verify_snapshot,
 )
 from app.services.request_parser import (
     parse_transport_request,
@@ -105,24 +112,37 @@ class PublicationOrchestrator:
             ),
         )
 
+        preview = build_publication_preview(
+            request,
+            approval.id,
+            self.settings,
+        )
+
+        frozen_preview, preview_hash = (
+            freeze_snapshot(
+                preview.model_dump(
+                    mode="json"
+                )
+            )
+        )
+
+        approval.ati_preview = frozen_preview
+        approval.ati_preview_hash = preview_hash
+
         stored, created = (
             self.repository.create_or_get(
                 approval
             )
         )
 
-        preview = build_publication_preview(
-            stored.request,
-            stored.id,
-            self.settings,
-        )
+        # При повторном webhook возвращается
+        # именно ранее сохранённый снимок.
+        stored_preview = stored.ati_preview
 
         result = {
             "request": stored.request.model_dump(),
             "draft": stored.draft.model_dump(),
-            "ati_preview": preview.model_dump(
-                mode="json"
-            ),
+            "ati_preview": stored_preview,
             "approval": stored.model_dump(),
             "duplicate": not created,
         }
@@ -177,10 +197,17 @@ class PublicationOrchestrator:
             approval_id
         )
 
-        preview = build_publication_preview(
-            pending.request,
-            pending.id,
-            self.settings,
+        # Ничего не перестраиваем при нажатии
+        # кнопки: используем только тот снимок,
+        # который видел владелец.
+        snapshot = verify_snapshot(
+            pending.ati_preview,
+            pending.ati_preview_hash,
+        )
+
+        preview = (
+            AtiPublicationBuildResult
+            .model_validate(snapshot)
         )
 
         # В DRY_RUN разрешаем проверять полный
@@ -212,9 +239,11 @@ class PublicationOrchestrator:
 
         publication_result[
             "ati_preview"
-        ] = preview.model_dump(
-            mode="json"
-        )
+        ] = snapshot
+
+        publication_result[
+            "ati_preview_hash"
+        ] = pending.ati_preview_hash
 
         approval = self.repository.consume(
             approval_id,
@@ -223,8 +252,9 @@ class PublicationOrchestrator:
 
         result = {
             "approval": approval.model_dump(),
-            "ati_preview": preview.model_dump(
-                mode="json"
+            "ati_preview": snapshot,
+            "ati_preview_hash": (
+                pending.ati_preview_hash
             ),
             "publication_result": (
                 publication_result

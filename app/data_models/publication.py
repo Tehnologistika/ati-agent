@@ -36,6 +36,11 @@ class PublicationApproval(BaseModel):
     request: TransportRequest
     draft: AtiDraft
 
+    # Точное содержимое карточки и будущего
+    # запроса ATI на момент создания approval.
+    ati_preview: dict[str, Any] | None = None
+    ati_preview_hash: str | None = None
+
     source_chat_id: str
     source_message_id: str | None = None
     requested_by: str | None = None
