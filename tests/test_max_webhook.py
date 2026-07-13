@@ -137,3 +137,66 @@ def test_commands_and_approval_buttons():
         buttons[0][1]["payload"]
         == "ati:reject:approval-1"
     )
+
+
+def test_extract_reply_link_from_max_message():
+    body = {
+        "update_type": "message_created",
+        "message": {
+            "recipient": {
+                "chat_id": -73294996749751,
+            },
+            "sender": {
+                "user_id": 777001,
+                "first_name": "Навигатор",
+                "last_name": "Автор",
+            },
+            "body": {
+                "mid": "close-message",
+                "text": "#ЗАКРЫТО",
+            },
+            "link": {
+                "type": "reply",
+                "chat_id": -73294996749751,
+                "message": {
+                    "body": {
+                        "mid": "original-request",
+                        "text": "#ЗАЯВКА",
+                    },
+                    "recipient": {
+                        "chat_id": (
+                            -73294996749751
+                        ),
+                    },
+                },
+            },
+        },
+    }
+
+    message = extract_max_message(body)
+
+    assert message["chat_id"] == (
+        "-73294996749751"
+    )
+
+    assert message["message_id"] == (
+        "close-message"
+    )
+
+    assert message["user_id"] == "777001"
+
+    assert message["author_name"] == (
+        "Навигатор Автор"
+    )
+
+    assert message["text"] == "#ЗАКРЫТО"
+
+    assert message["linked_message_id"] == (
+        "original-request"
+    )
+
+    assert message["linked_chat_id"] == (
+        "-73294996749751"
+    )
+
+    assert message["link_type"] == "reply"

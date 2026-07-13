@@ -28,8 +28,16 @@ def extract_update_type(body: dict[str, Any]) -> str:
     )
 
 
-def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
-    """Extract common fields from official and legacy MAX message formats."""
+def extract_max_message(
+    body: dict[str, Any],
+) -> dict[str, str]:
+    """
+    Extract common fields from official and legacy
+    MAX message formats.
+
+    For replies and forwarded messages, also return
+    the linked source message identifiers.
+    """
 
     update = first_update(body)
 
@@ -44,14 +52,17 @@ def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
         message = {}
 
     message_body = message.get("body") or {}
+
     if not isinstance(message_body, dict):
         message_body = {}
 
     recipient = message.get("recipient") or {}
+
     if not isinstance(recipient, dict):
         recipient = {}
 
     chat = message.get("chat") or {}
+
     if not isinstance(chat, dict):
         chat = {}
 
@@ -65,6 +76,36 @@ def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
 
     if not isinstance(sender, dict):
         sender = {}
+
+    link = message.get("link") or {}
+
+    if not isinstance(link, dict):
+        link = {}
+
+    linked_message = (
+        link.get("message")
+        or link.get("linked_message")
+        or {}
+    )
+
+    if not isinstance(linked_message, dict):
+        linked_message = {}
+
+    linked_body = (
+        linked_message.get("body")
+        or {}
+    )
+
+    if not isinstance(linked_body, dict):
+        linked_body = {}
+
+    linked_recipient = (
+        linked_message.get("recipient")
+        or {}
+    )
+
+    if not isinstance(linked_recipient, dict):
+        linked_recipient = {}
 
     chat_id = (
         recipient.get("chat_id")
@@ -97,10 +138,23 @@ def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
         or ""
     )
 
-    first_name = str(sender.get("first_name") or "").strip()
-    last_name = str(sender.get("last_name") or "").strip()
+    first_name = str(
+        sender.get("first_name")
+        or ""
+    ).strip()
+
+    last_name = str(
+        sender.get("last_name")
+        or ""
+    ).strip()
+
     full_name = " ".join(
-        part for part in [first_name, last_name] if part
+        part
+        for part in [
+            first_name,
+            last_name,
+        ]
+        if part
     )
 
     author_name = (
@@ -113,11 +167,34 @@ def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
         or "MAX user"
     )
 
-    text = (
+    message_text = (
         message_body.get("text")
         or message.get("text")
         or update.get("text")
         or body.get("text")
+        or ""
+    )
+
+    linked_message_id = (
+        link.get("mid")
+        or link.get("message_id")
+        or linked_body.get("mid")
+        or linked_body.get("message_id")
+        or linked_message.get("mid")
+        or linked_message.get("message_id")
+        or linked_message.get("id")
+        or ""
+    )
+
+    linked_chat_id = (
+        link.get("chat_id")
+        or linked_recipient.get("chat_id")
+        or ""
+    )
+
+    link_type = (
+        link.get("type")
+        or link.get("link_type")
         or ""
     )
 
@@ -126,7 +203,14 @@ def extract_max_message(body: dict[str, Any]) -> dict[str, str]:
         "message_id": str(message_id),
         "user_id": str(user_id),
         "author_name": str(author_name),
-        "text": str(text or ""),
+        "text": str(message_text or ""),
+        "linked_message_id": str(
+            linked_message_id
+        ),
+        "linked_chat_id": str(
+            linked_chat_id
+        ),
+        "link_type": str(link_type),
     }
 
 
