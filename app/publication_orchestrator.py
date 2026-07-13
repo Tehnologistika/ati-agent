@@ -23,6 +23,9 @@ from app.services.publication_snapshot import (
 from app.services.request_parser import (
     parse_transport_request,
 )
+from app.services.request_registry import (
+    RequestRegistryRepository,
+)
 
 
 class PublicationOrchestrator:
@@ -35,6 +38,13 @@ class PublicationOrchestrator:
                 settings.database_url
             )
         )
+
+        self.registry = (
+            RequestRegistryRepository(
+                settings.database_url
+            )
+        )
+
         self.ati = AtiClient(settings)
 
     def _authorize_owner(
@@ -94,9 +104,39 @@ class PublicationOrchestrator:
 
             return result
 
+        source_channel = (
+            str(source or "")
+            .split(":", 1)[0]
+            .strip()
+            or "unknown"
+        )
+
+        registry_request, registry_created = (
+            self.registry.create_or_get(
+                request=request,
+                source_channel=source_channel,
+                source_chat_id=str(
+                    source_chat_id
+                ),
+                source_message_id=(
+                    str(source_message_id)
+                    if source_message_id
+                    else None
+                ),
+                author_user_id=(
+                    str(requested_by)
+                    if requested_by
+                    else None
+                ),
+            )
+        )
+
         approval = PublicationApproval(
             request=request,
             draft=draft,
+            registry_request_id=(
+                registry_request.request_id
+            ),
             source_chat_id=str(
                 source_chat_id
             ),
@@ -145,6 +185,14 @@ class PublicationOrchestrator:
             "ati_preview": stored_preview,
             "approval": stored.model_dump(),
             "duplicate": not created,
+            "registry_request": (
+                registry_request.model_dump(
+                    mode="json"
+                )
+            ),
+            "registry_duplicate": (
+                not registry_created
+            ),
         }
 
         event_name = (
@@ -197,6 +245,25 @@ class PublicationOrchestrator:
             approval_id
         )
 
+        if not pending.registry_request_id:
+            raise RuntimeError(
+                "Публикация заблокирована: "
+                "approval не связан с единым "
+                "реестром заявок"
+            )
+
+        registry_request = self.registry.get(
+            pending.registry_request_id
+        )
+
+        if not registry_request.is_active:
+            raise RuntimeError(
+                "Публикация заблокирована: "
+                f"заявка "
+                f"{registry_request.request_id} "
+                "уже закрыта и не актуальна"
+            )
+
         # Ничего не перестраиваем при нажатии
         # кнопки: используем только тот снимок,
         # который видел владелец.
@@ -244,6 +311,10 @@ class PublicationOrchestrator:
         publication_result[
             "ati_preview_hash"
         ] = pending.ati_preview_hash
+
+        publication_result[
+            "registry_request_id"
+        ] = registry_request.request_id
 
         approval = self.repository.consume(
             approval_id,

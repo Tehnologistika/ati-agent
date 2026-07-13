@@ -41,6 +41,9 @@ class PublicationApproval(BaseModel):
     ati_preview: dict[str, Any] | None = None
     ati_preview_hash: str | None = None
 
+    # Единый номер заявки в реестре Ярус Пик.
+    registry_request_id: str | None = None
+
     source_chat_id: str
     source_message_id: str | None = None
     requested_by: str | None = None
