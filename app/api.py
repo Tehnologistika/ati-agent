@@ -719,7 +719,7 @@ async def max_webhook(
                     f"Закрыл: "
                     f"{msg['author_name']}.\n"
                     f"ATI: {ati_text}.\n"
-                    "Для Айюба: заявка "
+                    "Для Аюба: заявка "
                     "помечена неактивной."
                 )
 

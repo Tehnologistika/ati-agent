@@ -47,7 +47,7 @@ def build_registry_status(
     entry: RegistryRequest,
 ) -> dict[str, Any]:
     """
-    Минимальный read-only ответ для Айюба.
+    Минимальный read-only ответ для Аюба.
 
     Полный текст заявки и внутренние данные
     клиента через этот маршрут не раскрываются.
